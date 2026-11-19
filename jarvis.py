@@ -9,29 +9,39 @@ Usage:
     python jarvis.py --wake   # always listening, reacts to "Hey Jarvis"
     python jarvis.py --text   # type instead of speak
 """
+import json
 import os
 import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 import requests
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GEMINI_MODEL = os.environ.get("JARVIS_MODEL", "gemini-flash-lite-latest")
+GEMINI_MODEL = os.environ.get("JARVIS_MODEL", "gemini-2.5-flash")
 CLAUDE_MODEL = "claude-sonnet-5-5"
-FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.0-flash"]
-WAKE_WORDS = ("jarvis", "jervis", "jarvice", "jarvas", "jarvus")
+FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+WAKE_WORDS = (
+    "jarvis", "jervis", "jarvice", "jarvas", "jarvus",
+    "javis", "javed", "jarvi", "jarves",
+)
 
 SYSTEM = (
-    "You are Jarvis, a concise, witty voice assistant running on an Android phone. "
+    "You are Jarvis, a concise, friendly voice assistant running on an Android phone. "
     "Reply in at most 3 short sentences, in plain speech (no markdown, no asterisks). "
     "To control the phone, end your reply with exactly one line of the form "
-    "'ACTION: <name> [arg]'. Available actions: "
+    "'ACTION: <n> [arg]'. Available actions: "
     "flashlight on, flashlight off, battery, open_url <url>, "
     "set_volume <0-15>, vibrate. Only use an action when the user asks for it."
 )
+
+
+def system_prompt():
+    now = datetime.now().strftime("%A, %B %d %Y, %I:%M %p")
+    return SYSTEM + f" The current date and time is {now}."
 
 
 def run(cmd, timeout=30):
@@ -42,9 +52,19 @@ def run(cmd, timeout=30):
         return f"error: {e}"
 
 
+def get_volume(stream):
+    try:
+        for v in json.loads(run(["termux-volume"])):
+            if v["stream"] == stream:
+                return v["volume"]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def speak(text):
     print(f"Jarvis: {text}")
-    run(["termux-tts-speak", text], timeout=120)
+    run(["termux-tts-speak", "-s", "MUSIC", text], timeout=120)
 
 
 def listen():
@@ -93,7 +113,7 @@ def ask_gemini(history):
                 headers={"x-goog-api-key": GEMINI_KEY,
                          "content-type": "application/json"},
                 json={
-                    "system_instruction": {"parts": [{"text": SYSTEM}]},
+                    "system_instruction": {"parts": [{"text": system_prompt()}]},
                     "contents": contents,
                 },
                 timeout=60,
@@ -102,6 +122,7 @@ def ask_gemini(history):
             return r.json()["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:  # noqa: BLE001
             last_err = e
+            print(f"[{model}] {e}")
     raise last_err
 
 
@@ -114,7 +135,7 @@ def ask_claude(history):
             "content-type": "application/json",
         },
         json={"model": CLAUDE_MODEL, "max_tokens": 400,
-              "system": SYSTEM, "messages": history},
+              "system": system_prompt(), "messages": history},
         timeout=60,
     )
     r.raise_for_status()
@@ -169,9 +190,13 @@ def main():
     text_mode = "--text" in sys.argv
     wake_mode = "--wake" in sys.argv
     history = []
+    saved_vol = None
 
     if wake_mode:
         run(["termux-wake-lock"])  # keeps Termux alive with the screen off
+        # Mute the notification stream so the mic beep is silent.
+        saved_vol = get_volume("notification")
+        run(["termux-volume", "notification", "0"])
         speak("Wake mode on. Say Jarvis, then your request.")
     else:
         speak("Jarvis online. How can I help?")
@@ -204,6 +229,8 @@ def main():
     finally:
         if wake_mode:
             run(["termux-wake-unlock"])
+            run(["termux-volume", "notification",
+                 str(saved_vol if saved_vol is not None else 7)])
 
 
 if __name__ == "__main__":
