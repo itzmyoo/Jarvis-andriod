@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Jarvis: a voice assistant for Android (Termux + Termux:API + Claude API).
+"""Jarvis: a voice assistant for Android (Termux + Termux:API).
+
+Uses the free Google Gemini API by default (GEMINI_API_KEY).
+If ANTHROPIC_API_KEY is set and no Gemini key exists, it uses Claude instead.
 
 Usage:
     python jarvis.py          # voice mode
@@ -12,13 +15,14 @@ import sys
 
 import requests
 
-API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = os.environ.get("JARVIS_MODEL", "claude-sonnet-5-5")
-API_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GEMINI_MODEL = os.environ.get("JARVIS_MODEL", "gemini-2.5-flash")
+CLAUDE_MODEL = "claude-sonnet-5-5"
 
 SYSTEM = (
     "You are Jarvis, a concise, witty voice assistant running on an Android phone. "
-    "Reply in at most 3 short sentences, in plain speech (no markdown). "
+    "Reply in at most 3 short sentences, in plain speech (no markdown, no asterisks). "
     "To control the phone, end your reply with exactly one line of the form "
     "'ACTION: <name> [arg]'. Available actions: "
     "flashlight on, flashlight off, battery, open_url <url>, "
@@ -64,24 +68,52 @@ def do_action(line):
     return None
 
 
-def ask(history):
+def ask_gemini(history):
+    contents = [
+        {"role": "user" if m["role"] == "user" else "model",
+         "parts": [{"text": m["content"]}]}
+        for m in history
+    ]
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent"
+    )
     r = requests.post(
-        API_URL,
+        url,
+        headers={"x-goog-api-key": GEMINI_KEY, "content-type": "application/json"},
+        json={
+            "system_instruction": {"parts": [{"text": SYSTEM}]},
+            "contents": contents,
+        },
+        timeout=60,
+    )
+    r.raise_for_status()
+    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def ask_claude(history):
+    r = requests.post(
+        "https://api.anthropic.com/v1/messages",
         headers={
-            "x-api-key": API_KEY,
+            "x-api-key": ANTHROPIC_KEY,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
-        json={"model": MODEL, "max_tokens": 400, "system": SYSTEM, "messages": history},
+        json={"model": CLAUDE_MODEL, "max_tokens": 400,
+              "system": SYSTEM, "messages": history},
         timeout=60,
     )
     r.raise_for_status()
     return r.json()["content"][0]["text"]
 
 
+def ask(history):
+    return ask_gemini(history) if GEMINI_KEY else ask_claude(history)
+
+
 def main():
-    if not API_KEY:
-        sys.exit("Set ANTHROPIC_API_KEY first (see README).")
+    if not (GEMINI_KEY or ANTHROPIC_KEY):
+        sys.exit("No API key found. Run: source ~/.jarvis_env  (see README).")
     text_mode = "--text" in sys.argv
     history = []
     speak("Jarvis online. How can I help?")
