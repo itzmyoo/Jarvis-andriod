@@ -7,6 +7,7 @@ If ANTHROPIC_API_KEY is set and no Gemini key exists, it uses Claude instead.
 Usage:
     python jarvis.py          # voice mode (one question at a time)
     python jarvis.py --wake   # always listening, reacts to "Hey Jarvis"
+    python jarvis.py --once   # push-to-talk: answer one question, then exit
     python jarvis.py --text   # type instead of speak
 """
 import json
@@ -189,6 +190,7 @@ def main():
         sys.exit("No API key found. Run: source ~/.jarvis_env  (see README).")
     text_mode = "--text" in sys.argv
     wake_mode = "--wake" in sys.argv
+    once_mode = "--once" in sys.argv
     history = []
     saved_vol = None
 
@@ -198,6 +200,8 @@ def main():
         saved_vol = get_volume("notification")
         run(["termux-volume", "notification", "0"])
         speak("Wake mode on. Say Jarvis, then your request.")
+    elif once_mode:
+        speak("Yes?")
     else:
         speak("Jarvis online. How can I help?")
 
@@ -219,11 +223,16 @@ def main():
             else:
                 user = listen()
             if not user:
+                if once_mode:
+                    speak("I didn't catch that.")
+                    break
                 continue
             if is_exit(user):
                 speak("Goodbye.")
                 break
             history = respond(user, history)
+            if once_mode:
+                break
     except KeyboardInterrupt:
         pass
     finally:
