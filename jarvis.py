@@ -22,9 +22,11 @@ import requests
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GEMINI_MODEL = os.environ.get("JARVIS_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("JARVIS_MODEL", "gemini-3.8-flash")
+if "MODEL_NAME" in GEMINI_MODEL:  # ignore a leftover placeholder
+    GEMINI_MODEL = "gemini-3.8-flash"
 CLAUDE_MODEL = "claude-sonnet-5-5"
-FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite"]
 WAKE_WORDS = (
     "jarvis", "jervis", "jarvice", "jarvas", "jarvus",
     "javis", "javed", "jarvi", "jarves",
